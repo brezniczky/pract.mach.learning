@@ -1,0 +1,163 @@
+---
+title: "Predicting exercise quality from sensor data"
+author: "Janos Brezniczky"
+date: "25 October 2015"
+output: html_document
+---
+
+## Introduction
+
+Weight lifting exercises are healthy, but attention should be paid at the 
+correct way of executing them. Using a publicly available data set, an attempt
+to predict this correctness automatically from sensor data is described in this 
+document, which is a Practical Machine Learning course assignment solution.
+
+The test data is provided by the lecturer therefore. The goal is to predict for
+those cases as well as possible.
+
+## Exploring the data
+
+```{r echo = TRUE}
+#setwd("/media/janca/Code/Coursera/Practical Machine Learning")
+train.data = read.csv("pml-training.csv", header = TRUE, 
+                      stringsAsFactors = TRUE)
+test.data = read.csv("pml-testing.csv", header = TRUE, 
+                      stringsAsFactors = TRUE)
+```
+
+The training data, called the Weight Lifting Exercise Dataset, is available at http://groupware.les.inf.puc-rio.br/har#weight_lifting_exercises, and contains
+`r nrow(train.data)` records. It has a large number (`r ncol(train.data)`) of 
+columns which urges some sort of filtering to be performed when
+selecting the predictors.
+
+Examining the contents reveals that many of the fields only contain summary data
+at the end of each time window, into which the data set is structured. These 
+fields are otherwise, including at prediction time are not available, thus will 
+be omitted in the analysis.
+
+The outcome is the _classe_ field which categorizes goodness from A (best) to E 
+(worst).
+
+```{r echo = FALSE}
+train.columns = 
+  c('roll_belt', 'pitch_belt', 'yaw_belt',
+    'total_accel_belt', 
+    "gyros_belt_x", "gyros_belt_y", "gyros_belt_z",
+    "accel_belt_x", "accel_belt_y", "accel_belt_z",
+    "magnet_belt_x", "magnet_belt_y", "magnet_belt_z",
+    "roll_arm", "pitch_arm", "yaw_arm", "total_accel_arm",
+    "gyros_arm_x", "gyros_arm_y", "gyros_arm_z", 
+    "accel_arm_x", "accel_arm_y", "accel_arm_z", 
+    "magnet_arm_x", "magnet_arm_y", "magnet_arm_z",
+    "roll_dumbbell",	"pitch_dumbbell",	"yaw_dumbbell",
+    "total_accel_dumbbell",
+    "gyros_dumbbell_x",	"gyros_dumbbell_y",	"gyros_dumbbell_z",	
+    "accel_dumbbell_x",	"accel_dumbbell_y",	"accel_dumbbell_z",	
+    "magnet_dumbbell_x", "magnet_dumbbell_y", "magnet_dumbbell_z", 
+    "roll_forearm", "pitch_forearm", "yaw_forearm",
+    "gyros_forearm_x", "gyros_forearm_y", "gyros_forearm_z", 
+    "accel_forearm_x", "accel_forearm_y", "accel_forearm_z", 
+    "magnet_forearm_x", "magnet_forearm_y", "magnet_forearm_z")
+```
+
+## Training
+
+Multiple machine learning algorithms have been tried. All of them employed
+using some sort of cross-validation which the caret package allows for.
+
+There is intertemporal dependency in the dataset, which does not seem relevant 
+to this document, as the test data contains non-adjacent samples. Nevertheless
+k-fold cross-validation was applied which would work even in case we needed to 
+maintain that feature of the data, too.
+
+```{r echo = FALSE}
+# save timestamp information for later visualisation
+test.timestamps = head(paste(test.data$raw_timestamp_part_1, ":", 
+                             test.data$raw_timestamp_part_2)) 
+```
+```{r echo = FALSE}
+train.data = train.data[, c("classe", train.columns)]
+test.data = test.data[, train.columns]
+```
+
+### Random tree
+
+The first algorithm employed is the random tree.
+This gave an accuracy of about 50%, which seemed unsatisfactory.
+
+```{r echo = TRUE, cache = TRUE}
+library(caret)
+control.param = trainControl(method = "repeatedcv", 
+                             number = 3,
+                             repeats = 5,
+                             verboseIter = TRUE)
+fitted1 = train(classe ~ .,
+                data = train.data, method = "rpart",
+                trControl = control.param)
+```
+
+### Random forest
+
+The next algorithm was the random forest. This is much slower and thus the 
+number of folds multiplied by the repeats had to be kept low in the end.
+Some sort of cross-validation was however still necessary to avoid overfitting.
+
+```{r echo = TRUE, cache = TRUE}
+library(caret)
+control.param = trainControl(method = "repeatedcv", 
+                             number = 2,
+                             repeats = 1,
+                             verboseIter = TRUE)
+fitted2 = train(classe ~ .,
+                data = train.data, method = "rf",
+                trControl = control.param)
+```
+
+This gave accuracies above 98% which is already acceptable.
+
+## Out of sample error estimation
+
+One estimate comes from the cross validation performed while generating the 
+model, where it is 1 - model accuracy. Since the choice was the last model, this 
+gives an error rate below 2%.
+
+However it is possible to evaluate this on the full training set as below:
+```{r echo = TRUE}
+n.hits = sum(predict(fitted2, train.data) == train.data$classe)
+n.misses = nrow(train.data) - n.hits
+error = sum(n.misses) / nrow(train.data)
+```
+This gives a `r round(error * 100, digits = 2)`% error.
+
+## Conclusion
+
+The random forest algorithm gave sufficiently good results in terms of estimated 
+out of sample accuracy.
+
+## Appendix
+
+### Complete listing of columns actually involved in training
+```{r echo=TRUE} 
+print(c(train.columns, "classe"))
+```
+
+### Test dataset timestamps were not adjacent
+
+```{r echo=TRUE} 
+print(test.timestamps)
+```
+
+### Training results: 1. Random Tree
+
+```{r echo=TRUE}
+print(fitted1)
+print(fitted1$finalModel)
+```
+
+### Training results: 2. Random Forest
+Random forest training results
+
+```{r echo=TRUE}
+print(fitted2)
+print(fitted2$finalModel)
+```
